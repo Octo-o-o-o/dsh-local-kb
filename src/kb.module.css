@@ -1,11 +1,13 @@
 .root {
   display: flex;
   flex-direction: column;
+  height: 100%;
   gap: 16px;
-  padding: 20px;
-  color: var(--text-primary, #e2e8f0);
-  font-family: var(--font-sans, system-ui, -apple-system, sans-serif);
-  max-width: 1100px;
+  padding: 20px 24px;
+  overflow: auto;
+  color: var(--dsw-alias-label-primary, inherit);
+  background: var(--dsw-alias-bg-base, transparent);
+  font-family: var(--dsw-font-family, system-ui, -apple-system, sans-serif);
 }
 
 .header {
@@ -25,14 +27,14 @@
 .subtitle {
   margin: 4px 0 0;
   font-size: 12px;
-  color: var(--text-secondary, #94a3b8);
+  color: var(--dsw-alias-label-secondary, #94a3b8);
 }
 
 .card {
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 10px;
-  padding: 14px;
-  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid var(--dsw-alias-border-l3, rgba(148, 163, 184, 0.22));
+  border-radius: var(--dsw-radius-md, 10px);
+  padding: 14px 16px;
+  background: var(--dsw-alias-bg-layer-2, rgba(148, 163, 184, 0.06));
 }
 
 .sectionTitle {
@@ -51,19 +53,19 @@
   flex: 1;
   min-width: 240px;
   padding: 7px 10px;
-  border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(15, 23, 42, 0.85);
-  color: inherit;
+  border-radius: var(--dsw-radius-sm, 8px);
+  border: 1px solid var(--dsw-alias-border-l3, rgba(148, 163, 184, 0.3));
+  background: var(--dsw-alias-bg-layer-1, rgba(148, 163, 184, 0.08));
+  color: var(--dsw-alias-label-primary, inherit);
   font-size: 12px;
 }
 
 .btn {
   padding: 7px 12px;
-  border-radius: 6px;
-  border: 1px solid rgba(148, 163, 184, 0.35);
-  background: rgba(30, 41, 59, 0.8);
-  color: inherit;
+  border-radius: var(--dsw-radius-sm, 8px);
+  border: 1px solid var(--dsw-alias-border-l3, rgba(148, 163, 184, 0.3));
+  background: var(--dsw-alias-bg-layer-2, rgba(148, 163, 184, 0.1));
+  color: var(--dsw-alias-label-primary, inherit);
   cursor: pointer;
   font-size: 12px;
 }
@@ -86,16 +88,16 @@
   align-items: flex-start;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 8px;
-  background: rgba(30, 41, 59, 0.45);
-  border: 1px solid rgba(148, 163, 184, 0.15);
+  border-radius: var(--dsw-radius-sm, 8px);
+  background: var(--dsw-alias-bg-layer-1, rgba(148, 163, 184, 0.05));
+  border: 1px solid var(--dsw-alias-border-l2, rgba(148, 163, 184, 0.15));
   font-size: 12px;
 }
 
 .mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: 11px;
-  color: #94a3b8;
+  color: var(--dsw-alias-label-secondary, #94a3b8);
 }
 
 .badge {
@@ -115,6 +117,6 @@
 
 .empty {
   font-size: 12px;
-  color: #94a3b8;
+  color: var(--dsw-alias-label-secondary, #94a3b8);
   padding: 8px 0;
 }
