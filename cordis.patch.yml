@@ -1,0 +1,4 @@
+# Standard plain YAML bundle patch (core YAML schema only).
+- insert:
+    - id: dsh-local-kb
+      name: dsh-local-kb

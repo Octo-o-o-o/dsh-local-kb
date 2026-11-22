@@ -1,0 +1,104 @@
+{
+  "name": "dsh-local-kb",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "Local-first deterministic knowledge base plugin for DeepSeek Harness (dsh@0.2.2-rc.5) powered by Node 26 built-in node:sqlite FTS5 (CJK bigram + trigram dual index), safe OOXML extraction (DOCX/XLSX/PPTX with ZIP-bomb & XXE guards), source_hash freshness, and bounded pagination.",
+  "icon": "./icon.svg",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "cordis",
+    "knowledge-base",
+    "fts5",
+    "sqlite",
+    "rag",
+    "ooxml",
+    "cjk",
+    "governance"
+  ],
+  "author": "OctoLab (Octo-o-o-o)",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/Octo-o-o-o/dsh-local-kb",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Octo-o-o-o/dsh-local-kb.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Octo-o-o-o/dsh-local-kb/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=24.9",
+    "dsh": ">=0.2.2-rc.5 <0.3.0"
+  },
+  "main": "./dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "lib",
+    "locale/*.json",
+    "skills",
+    "icon.svg",
+    "cordis.patch.yml",
+    "README.md",
+    "README.en.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "manifestVersion": 1,
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "external": [
+        "react",
+        "react/jsx-runtime",
+        "react-dom",
+        "@deepseek-ai/cordis",
+        "@deepseek-ai/dsh-client-ui-slots"
+      ],
+      "inject": [
+        "@deepseek-ai/dsh-client-connection",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "~4.1.0",
+    "react": "^18.3.1"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "@types/react": "18.3.31",
+    "@types/react-dom": "18.3.7",
+    "esbuild": "0.28.2",
+    "fflate": "^0.8.2",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "5.9.3",
+    "vitest": "5.1.1",
+    "yaml": "^2.8.0"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "verify:release": "node scripts/verify-release.mjs"
+  }
+}

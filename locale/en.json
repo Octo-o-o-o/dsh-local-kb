@@ -1,0 +1,5 @@
+{
+  "name": "dsh-local-kb",
+  "displayName": "Local Deterministic KB",
+  "description": "Local-first deterministic knowledge base plugin using Node 26 built-in node:sqlite FTS5 (CJK bigram + trigram dual index), safe OOXML extraction (DOCX/XLSX/PPTX), source_hash freshness, and bounded pagination."
+}
