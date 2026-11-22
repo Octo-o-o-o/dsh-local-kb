@@ -21,6 +21,7 @@ afterEach(() => {
 function createMockCtx() {
   const provided = new Map<string, unknown>()
   const tools = new Map<string, any>()
+  const routes = new Map<string, (req: Request) => Promise<Response>>()
   const registeredEvidence: any[] = []
   const auditEvents: any[] = []
 
@@ -46,6 +47,16 @@ function createMockCtx() {
           },
         }
       }
+      if (key === 'connection') {
+        return {
+          fetch: {
+            register: (r: { path: string; fetch: (req: Request) => Promise<Response> }) => {
+              routes.set(r.path, r.fetch)
+              return () => routes.delete(r.path)
+            },
+          },
+        }
+      }
       return undefined
     },
     provide(key: string, val: unknown) {
@@ -54,7 +65,7 @@ function createMockCtx() {
     effect() {},
   }
 
-  return { ctx, provided, tools, registeredEvidence, auditEvents }
+  return { ctx, provided, tools, routes, registeredEvidence, auditEvents }
 }
 
 function buildMiniDocx(bodyXml: string): Buffer {
@@ -245,6 +256,30 @@ describe('dsh-local-kb', () => {
     const search = svc.search('合同编号')
     expect(search.hits).toHaveLength(1)
     expect(search.hits[0]!.relPath).toBe('contract.pdf')
+    svc.close()
+  })
+
+  it('responds with strict DSH Connection RPC server-response envelope on /api/dshLocalKb', async () => {
+    const { ctx, routes } = createMockCtx()
+    const svc = apply(ctx, { dbPath: ':memory:' })
+    const handler = routes.get('/api/dshLocalKb')!
+    const resp = await handler(
+      new Request('http://127.0.0.1/api/dshLocalKb', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          type: 'client-request',
+          rpcId: 'rpc-kb-1',
+          method: 'dshLocalKb',
+          payload: { method: 'status', payload: {} },
+        }),
+      }),
+    )
+    const json = (await resp.json()) as any
+    expect(json.type).toBe('server-response')
+    expect(json.rpcId).toBe('rpc-kb-1')
+    expect(json.result.ok).toBe(true)
+    expect(json.result.value.config.kbOnlyMode).toBe(true)
     svc.close()
   })
 })

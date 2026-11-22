@@ -21,7 +21,8 @@
 ## 安装
 
 ```bash
-dsh plugin add github:Octo-o-o-o/dsh-local-kb
+dsh plugin --profile web add github:Octo-o-o-o/dsh-local-kb
+dsh web
 ```
 
 ## 诚实边界说明

@@ -1417,7 +1417,6 @@ var LocalKbStore = class {
 
 // src/host/index.ts
 var name = "dsh-local-kb";
-var inject = { optional: ["connection", "tools"] };
 function resolveSessionId(exec) {
   const agent = exec?.agent;
   if (agent?.session?.id) return agent.session.id;
@@ -1581,10 +1580,10 @@ function apply(ctx, config = {}) {
     close: () => store.close()
   };
   ctx.provide?.("governanceKb", service);
-  const tools = ctx.get("tools");
   const toolDisposers = [];
-  if (tools && typeof tools.register === "function") {
-    toolDisposers.push(
+  const registerKbTools = (tools, target) => {
+    if (!tools || typeof tools.register !== "function") return;
+    target.push(
       tools.register({
         name: "kb_list_roots",
         description: "List authorized local knowledge base roots and indexed document counts.",
@@ -1621,7 +1620,7 @@ function apply(ctx, config = {}) {
         execute: async () => ({ roots: service.listRoots() })
       })
     );
-    toolDisposers.push(
+    target.push(
       tools.register({
         name: "kb_search",
         description: "Deterministic FTS5 search across authorized local KB documents (supports 2+ char CJK and ASCII substrings).",
@@ -1680,7 +1679,7 @@ function apply(ctx, config = {}) {
         }
       })
     );
-    toolDisposers.push(
+    target.push(
       tools.register({
         name: "kb_read",
         description: "Read a bounded paginated slice of an authorized local KB document with source_hash freshness verification and mandatory truncated/nextOffset flags.",
@@ -1729,72 +1728,124 @@ function apply(ctx, config = {}) {
         }
       })
     );
+  };
+  if (typeof ctx.inject === "function") {
+    ctx.inject(["tools"], (scope) => {
+      const ts = scope.get("tools");
+      if (!ts) return;
+      const local = [];
+      registerKbTools(ts, local);
+      scope.effect?.(() => () => {
+        for (const d of local) {
+          try {
+            d();
+          } catch {
+          }
+        }
+      }, "dsh-local-kb: tools");
+    });
+  } else {
+    const ts = ctx.get("tools");
+    if (ts) registerKbTools(ts, toolDisposers);
   }
-  const connection = ctx.get("connection");
   let disposeRoute;
-  if (connection?.fetch?.register) {
-    disposeRoute = connection.fetch.register({
+  const registerConnectionRoute = (connection) => {
+    if (!connection?.fetch?.register) return void 0;
+    return connection.fetch.register({
       path: "/api/dshLocalKb",
       methods: ["POST"],
       requestBody: "buffered",
       fetch: async (request) => {
-        const body = await request.json().catch(() => ({}));
-        const rpcId = body.rpcId ?? "";
-        const method = body.method ?? "status";
-        const payload = body.payload ?? {};
+        let body;
         try {
-          let result;
-          if (method === "status") {
-            result = {
-              config: service.getConfig(),
-              roots: service.listRoots(),
-              supportedExtensions: service.getSupportedExtensions()
-            };
-          } else if (method === "listRoots") {
-            result = { roots: service.listRoots() };
-          } else if (method === "addRoot") {
-            const rootPath = String(payload.rootPath ?? "");
-            const label = typeof payload.label === "string" ? payload.label : void 0;
-            const root = service.addRoot(rootPath, label);
-            const summary = payload.indexNow === false ? null : await service.indexRoot(root.rootPath);
-            result = { root, summary };
-          } else if (method === "removeRoot") {
-            result = { removed: service.removeRoot(String(payload.rootPath ?? "")) };
-          } else if (method === "indexRoot") {
-            result = await service.indexRoot(String(payload.rootPath ?? ""));
-          } else if (method === "listDocuments") {
-            result = {
-              documents: service.listDocuments(typeof payload.rootPath === "string" ? payload.rootPath : void 0)
-            };
-          } else if (method === "search") {
-            result = service.search(String(payload.query ?? ""), {
-              limit: typeof payload.limit === "number" ? payload.limit : void 0,
-              rootPath: typeof payload.rootPath === "string" ? payload.rootPath : void 0
-            });
-          } else if (method === "read") {
-            result = await service.read(String(payload.path ?? ""), {
-              offset: typeof payload.offset === "number" ? payload.offset : void 0,
-              limit: typeof payload.limit === "number" ? payload.limit : void 0
-            });
-          } else {
-            return Response.json(
-              { type: "server-response", rpcId, error: { code: "UNKNOWN_METHOD", message: `Unknown method: ${method}` } },
-              { status: 400 }
-            );
-          }
-          return Response.json({ type: "server-response", rpcId, result });
-        } catch (err2) {
-          return Response.json(
-            {
-              type: "server-response",
-              rpcId,
-              error: { code: "KB_ERROR", message: err2 instanceof Error ? err2.message : String(err2) }
-            },
-            { status: 400 }
-          );
+          body = await request.json();
+        } catch {
+          return new Response("body is not JSON", { status: 400 });
         }
+        const rpcId = typeof body?.rpcId === "string" ? body.rpcId : "00000000-0000-0000-0000-000000000000";
+        const isDshEnvelope = body?.type === "client-request" && body?.payload && typeof body.payload === "object";
+        const envelope = isDshEnvelope ? body.payload : body;
+        const method = typeof envelope.method === "string" ? envelope.method : "status";
+        const payload = envelope.payload && typeof envelope.payload === "object" ? envelope.payload : {};
+        const dispatch = async () => {
+          try {
+            if (method === "status") {
+              return {
+                ok: true,
+                value: {
+                  config: service.getConfig(),
+                  roots: service.listRoots(),
+                  supportedExtensions: service.getSupportedExtensions()
+                }
+              };
+            }
+            if (method === "listRoots") {
+              return { ok: true, value: { roots: service.listRoots() } };
+            }
+            if (method === "addRoot") {
+              const rootPath = String(payload.rootPath ?? "");
+              const label = typeof payload.label === "string" ? payload.label : void 0;
+              const root = service.addRoot(rootPath, label);
+              const summary = payload.indexNow === false ? null : await service.indexRoot(root.rootPath);
+              return { ok: true, value: { root, summary } };
+            }
+            if (method === "removeRoot") {
+              return { ok: true, value: { removed: service.removeRoot(String(payload.rootPath ?? "")) } };
+            }
+            if (method === "indexRoot") {
+              return { ok: true, value: await service.indexRoot(String(payload.rootPath ?? "")) };
+            }
+            if (method === "listDocuments") {
+              return {
+                ok: true,
+                value: {
+                  documents: service.listDocuments(typeof payload.rootPath === "string" ? payload.rootPath : void 0)
+                }
+              };
+            }
+            if (method === "search") {
+              return {
+                ok: true,
+                value: service.search(String(payload.query ?? ""), {
+                  limit: typeof payload.limit === "number" ? payload.limit : void 0,
+                  rootPath: typeof payload.rootPath === "string" ? payload.rootPath : void 0
+                })
+              };
+            }
+            if (method === "read") {
+              return {
+                ok: true,
+                value: await service.read(String(payload.path ?? ""), {
+                  offset: typeof payload.offset === "number" ? payload.offset : void 0,
+                  limit: typeof payload.limit === "number" ? payload.limit : void 0
+                })
+              };
+            }
+            return {
+              ok: false,
+              error: { code: "dsh-local-kb/not-found", message: `Unknown method: ${method}`, details: {} }
+            };
+          } catch (err2) {
+            return {
+              ok: false,
+              error: { code: "dsh-local-kb/error", message: err2 instanceof Error ? err2.message : String(err2), details: {} }
+            };
+          }
+        };
+        return Response.json({ type: "server-response", rpcId, result: await dispatch() });
       }
     });
+  };
+  if (typeof ctx.inject === "function") {
+    ctx.inject(["connection"], (scope) => {
+      const conn = scope.get("connection");
+      if (!conn) return;
+      const disposer = registerConnectionRoute(conn);
+      if (disposer) scope.effect?.(() => disposer, "dsh-local-kb: connection route");
+    });
+  } else {
+    const conn = ctx.get("connection");
+    if (conn) disposeRoute = registerConnectionRoute(conn);
   }
   ctx.effect?.(() => {
     return async () => {
@@ -1815,7 +1866,6 @@ export {
   buildFtsTrigramQuery,
   extractSafeOoxmlText,
   hasCjk,
-  inject,
   isProtectedKbPath,
   name,
   normalizeRealRoot,

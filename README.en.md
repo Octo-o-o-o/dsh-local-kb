@@ -21,7 +21,8 @@ Local-first deterministic knowledge base plugin for DeepSeek Harness (`dsh@0.2.2
 ## Install
 
 ```bash
-dsh plugin add github:Octo-o-o-o/dsh-local-kb
+dsh plugin --profile web add github:Octo-o-o-o/dsh-local-kb
+dsh web
 ```
 
 ## Honest Boundaries

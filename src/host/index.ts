@@ -65,11 +65,11 @@ interface OfficialHostConnection {
 interface CordisLikeContext {
   get(key: string): unknown
   provide?(key: string, value: unknown): void
+  inject?(deps: readonly string[], callback: (ctx: CordisLikeContext) => void): () => void
   effect?(run: () => void | (() => void | Promise<void>), label?: string): void
 }
 
 export const name = 'dsh-local-kb'
-export const inject = { optional: ['connection', 'tools'] }
 
 function resolveSessionId(exec?: Record<string, unknown>): string {
   const agent = exec?.agent as { session?: { id?: string } } | undefined
@@ -250,11 +250,10 @@ export function apply(ctx: CordisLikeContext, config: LocalKbConfig = {}): Gover
   ctx.provide?.('governanceKb', service)
 
   // Register official DSH agent tools (`kb_list_roots`, `kb_search`, `kb_read`)
-  const tools = ctx.get('tools') as DshToolsServiceLike | undefined
   const toolDisposers: (() => void)[] = []
-
-  if (tools && typeof tools.register === 'function') {
-    toolDisposers.push(
+  const registerKbTools = (tools: DshToolsServiceLike, target: (() => void)[]) => {
+    if (!tools || typeof tools.register !== 'function') return
+    target.push(
       tools.register({
         name: 'kb_list_roots',
         description: 'List authorized local knowledge base roots and indexed document counts.',
@@ -292,7 +291,7 @@ export function apply(ctx: CordisLikeContext, config: LocalKbConfig = {}): Gover
       }),
     )
 
-    toolDisposers.push(
+    target.push(
       tools.register({
         name: 'kb_search',
         description: 'Deterministic FTS5 search across authorized local KB documents (supports 2+ char CJK and ASCII substrings).',
@@ -352,7 +351,7 @@ export function apply(ctx: CordisLikeContext, config: LocalKbConfig = {}): Gover
       }),
     )
 
-    toolDisposers.push(
+    target.push(
       tools.register({
         name: 'kb_read',
         description:
@@ -404,77 +403,127 @@ export function apply(ctx: CordisLikeContext, config: LocalKbConfig = {}): Gover
     )
   }
 
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['tools'], (scope) => {
+      const ts = scope.get('tools') as DshToolsServiceLike | undefined
+      if (!ts) return
+      const local: (() => void)[] = []
+      registerKbTools(ts, local)
+      scope.effect?.(() => () => {
+        for (const d of local) {
+          try { d() } catch { /* ignore */ }
+        }
+      }, 'dsh-local-kb: tools')
+    })
+  } else {
+    const ts = ctx.get('tools') as DshToolsServiceLike | undefined
+    if (ts) registerKbTools(ts, toolDisposers)
+  }
+
   // Authenticated Host RPC: /api/dshLocalKb
-  const connection = ctx.get('connection') as OfficialHostConnection | undefined
   let disposeRoute: (() => Promise<void> | void) | undefined
-  if (connection?.fetch?.register) {
-    disposeRoute = connection.fetch.register({
+  const registerConnectionRoute = (connection: OfficialHostConnection): (() => Promise<void> | void) | undefined => {
+    if (!connection?.fetch?.register) return undefined
+    return connection.fetch.register({
       path: '/api/dshLocalKb',
       methods: ['POST'],
       requestBody: 'buffered',
       fetch: async (request: Request) => {
-        const body = (await request.json().catch(() => ({}))) as {
-          rpcId?: string
-          method?: string
-          payload?: Record<string, unknown>
-        }
-        const rpcId = body.rpcId ?? ''
-        const method = body.method ?? 'status'
-        const payload = body.payload ?? {}
-
+        let body: Record<string, unknown>
         try {
-          let result: unknown
-          if (method === 'status') {
-            result = {
-              config: service.getConfig(),
-              roots: service.listRoots(),
-              supportedExtensions: service.getSupportedExtensions(),
-            }
-          } else if (method === 'listRoots') {
-            result = { roots: service.listRoots() }
-          } else if (method === 'addRoot') {
-            const rootPath = String(payload.rootPath ?? '')
-            const label = typeof payload.label === 'string' ? payload.label : undefined
-            const root = service.addRoot(rootPath, label)
-            const summary = payload.indexNow === false ? null : await service.indexRoot(root.rootPath)
-            result = { root, summary }
-          } else if (method === 'removeRoot') {
-            result = { removed: service.removeRoot(String(payload.rootPath ?? '')) }
-          } else if (method === 'indexRoot') {
-            result = await service.indexRoot(String(payload.rootPath ?? ''))
-          } else if (method === 'listDocuments') {
-            result = {
-              documents: service.listDocuments(typeof payload.rootPath === 'string' ? payload.rootPath : undefined),
-            }
-          } else if (method === 'search') {
-            result = service.search(String(payload.query ?? ''), {
-              limit: typeof payload.limit === 'number' ? payload.limit : undefined,
-              rootPath: typeof payload.rootPath === 'string' ? payload.rootPath : undefined,
-            })
-          } else if (method === 'read') {
-            result = await service.read(String(payload.path ?? ''), {
-              offset: typeof payload.offset === 'number' ? payload.offset : undefined,
-              limit: typeof payload.limit === 'number' ? payload.limit : undefined,
-            })
-          } else {
-            return Response.json(
-              { type: 'server-response', rpcId, error: { code: 'UNKNOWN_METHOD', message: `Unknown method: ${method}` } },
-              { status: 400 },
-            )
-          }
-          return Response.json({ type: 'server-response', rpcId, result })
-        } catch (err) {
-          return Response.json(
-            {
-              type: 'server-response',
-              rpcId,
-              error: { code: 'KB_ERROR', message: err instanceof Error ? err.message : String(err) },
-            },
-            { status: 400 },
-          )
+          body = (await request.json()) as Record<string, unknown>
+        } catch {
+          return new Response('body is not JSON', { status: 400 })
         }
+        const rpcId = typeof body?.rpcId === 'string' ? body.rpcId : '00000000-0000-0000-0000-000000000000'
+        const isDshEnvelope = body?.type === 'client-request' && body?.payload && typeof body.payload === 'object'
+        const envelope = (isDshEnvelope ? body.payload : body) as { method?: unknown; payload?: Record<string, unknown> }
+        const method = typeof envelope.method === 'string' ? envelope.method : 'status'
+        const payload = (envelope.payload && typeof envelope.payload === 'object' ? envelope.payload : {}) as Record<string, unknown>
+
+        const dispatch = async (): Promise<
+          { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly error: { readonly code: string; readonly message: string; readonly details: object } }
+        > => {
+          try {
+            if (method === 'status') {
+              return {
+                ok: true,
+                value: {
+                  config: service.getConfig(),
+                  roots: service.listRoots(),
+                  supportedExtensions: service.getSupportedExtensions(),
+                },
+              }
+            }
+            if (method === 'listRoots') {
+              return { ok: true, value: { roots: service.listRoots() } }
+            }
+            if (method === 'addRoot') {
+              const rootPath = String(payload.rootPath ?? '')
+              const label = typeof payload.label === 'string' ? payload.label : undefined
+              const root = service.addRoot(rootPath, label)
+              const summary = payload.indexNow === false ? null : await service.indexRoot(root.rootPath)
+              return { ok: true, value: { root, summary } }
+            }
+            if (method === 'removeRoot') {
+              return { ok: true, value: { removed: service.removeRoot(String(payload.rootPath ?? '')) } }
+            }
+            if (method === 'indexRoot') {
+              return { ok: true, value: await service.indexRoot(String(payload.rootPath ?? '')) }
+            }
+            if (method === 'listDocuments') {
+              return {
+                ok: true,
+                value: {
+                  documents: service.listDocuments(typeof payload.rootPath === 'string' ? payload.rootPath : undefined),
+                },
+              }
+            }
+            if (method === 'search') {
+              return {
+                ok: true,
+                value: service.search(String(payload.query ?? ''), {
+                  limit: typeof payload.limit === 'number' ? payload.limit : undefined,
+                  rootPath: typeof payload.rootPath === 'string' ? payload.rootPath : undefined,
+                }),
+              }
+            }
+            if (method === 'read') {
+              return {
+                ok: true,
+                value: await service.read(String(payload.path ?? ''), {
+                  offset: typeof payload.offset === 'number' ? payload.offset : undefined,
+                  limit: typeof payload.limit === 'number' ? payload.limit : undefined,
+                }),
+              }
+            }
+            return {
+              ok: false,
+              error: { code: 'dsh-local-kb/not-found', message: `Unknown method: ${method}`, details: {} },
+            }
+          } catch (err) {
+            return {
+              ok: false,
+              error: { code: 'dsh-local-kb/error', message: err instanceof Error ? err.message : String(err), details: {} },
+            }
+          }
+        }
+
+        return Response.json({ type: 'server-response', rpcId, result: await dispatch() })
       },
     })
+  }
+
+  if (typeof ctx.inject === 'function') {
+    ctx.inject(['connection'], (scope) => {
+      const conn = scope.get('connection') as OfficialHostConnection | undefined
+      if (!conn) return
+      const disposer = registerConnectionRoute(conn)
+      if (disposer) scope.effect?.(() => disposer, 'dsh-local-kb: connection route')
+    })
+  } else {
+    const conn = ctx.get('connection') as OfficialHostConnection | undefined
+    if (conn) disposeRoute = registerConnectionRoute(conn)
   }
 
   ctx.effect?.(() => {

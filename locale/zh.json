@@ -1,5 +1,7 @@
 {
-  "name": "dsh-local-kb",
-  "displayName": "本地确定性知识库",
-  "description": "基于 Node 26 内置 node:sqlite FTS5（CJK 双字 + trigram 双索引）与安全 OOXML 解析的本地知识库插件，支持 source_hash 鲜度校验、强制分页读取与证据总线联动。"
+  "meta": {
+    "title": "本地确定性知识库",
+    "description": "基于 Node 26 内置 node:sqlite FTS5（CJK 双字 + trigram 双索引）与安全 OOXML 解析的本地知识库插件，支持 source_hash 鲜度校验、强制分页读取与证据总线联动。",
+    "detail": "./README.md"
+  }
 }
